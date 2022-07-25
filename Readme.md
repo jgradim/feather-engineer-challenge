@@ -35,6 +35,7 @@ We've prepared several different user stories to work on. Depending on what posi
 
 ```bash
 cp ./backend/.env.example ./backend/.env
+cp ./backend/.env.test.example ./backend/.env.test
 ```
 
 3. Build and run the Docker image:

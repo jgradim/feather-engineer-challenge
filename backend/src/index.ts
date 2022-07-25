@@ -2,7 +2,7 @@ import express from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 const app = express();
-const port = 4000;
+const port = process.env.BACKEND_PORT || 4000;
 const prisma = new PrismaClient();
 
 app.use(express.json())
@@ -49,6 +49,8 @@ app.get('/', (req, res) => {
   res.send('Server is up and running 🚀')
 })
 
-app.listen(port, () => {
+export const server = app.listen(port, () => {
   console.log(`🚀  Server ready at ${port}`);
 });
+
+export default app;
