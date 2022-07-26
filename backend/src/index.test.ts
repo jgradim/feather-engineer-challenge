@@ -1,6 +1,8 @@
 import request from 'supertest';
+import * as uuid from 'uuid';
 
 import app, { server } from './index';
+import prisma from './db';
 
 describe('HTTP Server', () => {
   afterAll(() => {
@@ -130,6 +132,231 @@ describe('HTTP Server', () => {
       expect(lastPage.body).toHaveLength(8);
       expect(lastPage.body[0].provider).toBe('TK');
     });
+
+    it('searches family members names in versions', async () => {
+      let policy = await prisma.policy.findFirst({
+        where: { provider: 'TK' },
+        include: { customer: true, familyMembers: true },
+      });
+
+      await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: { add: [{ firstName: 'John', lastName: 'Doe', dateOfBirth: '2022-01-01' }] }
+        });
+
+      let res = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: { add: [{ firstName: 'Jane', lastName: 'Doe', dateOfBirth: '2022-01-01' }] }
+        });
+
+      let search = await request(app)
+        .get('/policies?search=john')
+
+      expect(search.status).toBe(200);
+      expect(search.body).toHaveLength(1);
+
+      await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            remove: [
+              { id: res.body.familyMembers[0].id },
+              { id: res.body.familyMembers[1].id },
+            ]
+          }
+        });
+
+      const versions = await prisma.policyVersion.findMany({
+        where: { policyId: policy?.id },
+      });
+
+      expect(versions).toHaveLength(3);
+
+      search = await request(app)
+        .get('/policies?search=john')
+
+      expect(search.status).toBe(200);
+      expect(search.body).toHaveLength(1);
+
+      search = await request(app)
+        .get('/policies?search=JANE')
+
+      expect(search.status).toBe(200);
+      expect(search.body).toHaveLength(1);
+
+      search = await request(app)
+        .get('/policies?search=doE')
+
+      expect(search.status).toBe(200);
+      expect(search.body).toHaveLength(1);
+    });
   });
 
+  describe('GET /policies/:id/history', () => {
+    it('returns 400 if params are invalid', async () => {
+      const res = await request(app)
+        .get('/policies/1/history');
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 if policy is not found', async () => {
+      const res = await request(app)
+        .get(`/policies/${uuid.v4()}/history`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('returns policy versions', async () => {
+      const policy = await prisma.policy.findFirst({
+        where: { provider: 'AOK' },
+        include: { customer: true, familyMembers: true },
+      });
+
+      expect(policy?.latestVersion).toBe(0);
+      expect(policy?.familyMembers).toHaveLength(0);
+
+      await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: { add: [{ firstName: 'John', lastName: 'Doe', dateOfBirth: '2022-01-01' }] }
+        });
+
+      let versions = await request(app)
+        .get(`/policies/${policy?.id}/history`)
+
+      expect(versions.status).toBe(200);
+      expect(versions.body).toHaveLength(1);
+
+      await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: { add: [{ firstName: 'Jane', lastName: 'Doe', dateOfBirth: '2022-01-01' }] }
+        });
+
+      versions = await request(app)
+        .get(`/policies/${policy?.id}/history`)
+
+      expect(versions.status).toBe(200);
+      expect(versions.body).toHaveLength(2);
+    });
+  });
+
+  describe('PUT /policies/:id', () => {
+    it('returns 400 if params are invalid', async () => {
+      const res = await request(app)
+        .put('/policies/1');
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 204 if request body does not produce any updates', async () => {
+      const policy = await prisma.policy.findFirst();
+
+      const res = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            create: [{ firstName: 'John', lastName: 'Doe', dateOfBirth: '2022-01-01' }],
+            delete: [{ id: uuid.v4() }],
+          }
+        });
+
+      expect(res.status).toBe(204);
+    });
+
+    it('returns 400 if request body is invalid', async () => {
+      const policy = await prisma.policy.findFirst();
+
+      let res = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            add: [{ firstName: '', lastName: 'Doe', dateOfBirth: 'earlier this year' }],
+            remove: [{ id: 1 }],
+          }
+        });
+
+      expect(res.status).toBe(400);
+
+      res = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            add: { firstName: 'John', lastName: 'Doe', dateOfBirth: 'earlier this year' },
+          }
+        });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 if policy is not found', async () => {
+      const res = await request(app)
+        .put(`/policies/${uuid.v4()}`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('adds and removes family members, creates versions', async () => {
+      const policy = await prisma.policy.findFirst({
+        where: { provider: 'DAK' },
+        include: { customer: true, familyMembers: true },
+      });
+
+      expect(policy?.latestVersion).toBe(0);
+      expect(policy?.familyMembers).toHaveLength(0);
+
+      const add = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            add: [
+              { firstName: 'John', lastName: 'Doe', dateOfBirth: '2022-01-01' },
+              { firstName: 'Jane', lastName: 'Doe', dateOfBirth: '2022-01-01' },
+            ],
+          }
+        });
+
+      expect(add.status).toBe(200);
+      expect(add.body.familyMembers).toHaveLength(2);
+
+      let versions = await prisma.policyVersion.findMany({
+        where: { policyId: policy?.id },
+        orderBy: { version: 'asc' },
+      });
+
+      expect(versions).toHaveLength(1);
+      // @ts-ignore
+      expect(versions[0].data.familyMembers).toHaveLength(0);
+      expect(versions[0].version).toBe(1);
+
+      const remove = await request(app)
+        .put(`/policies/${policy?.id}`)
+        .send({
+          familyMembers: {
+            remove: [
+              { id: add.body.familyMembers[0].id }
+            ]
+          }
+        });
+
+      expect(remove.status).toBe(200);
+      expect(remove.body.familyMembers).toHaveLength(1);
+
+      versions = await prisma.policyVersion.findMany({
+        where: { policyId: policy?.id },
+        orderBy: { version: 'asc' },
+      });
+
+      expect(versions).toHaveLength(2);
+      // @ts-ignore
+      expect(versions[0].data.familyMembers).toHaveLength(0);
+      expect(versions[0].version).toBe(1);
+      // @ts-ignore
+      expect(versions[1].data.familyMembers).toHaveLength(2);
+      expect(versions[1].version).toBe(2);
+    });
+  });
 });
