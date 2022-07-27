@@ -4,7 +4,7 @@ Thank you for applying at Feather and taking the time to do this home assessment
 
 The goal of this project is to let you **show off your coding and problem-solving skills**, on a task that resembles the kind of work you’ll be doing with us.
 
-This coding challenge applies to **frontend, backend, and full-stack roles**. Depending on the position you are applying for, you can focus on your specific area.  
+This coding challenge applies to **frontend, backend, and full-stack roles**. Depending on the position you are applying for, you can focus on your specific area.
 
 You can spend as little or as much time as you like on this project. We've added some initial boilerplate to help you get started, but **feel free to refactor every part of this app as you may seem fit**.
 
@@ -15,7 +15,7 @@ You can spend as little or as much time as you like on this project. We've added
 
 ## Engineering challenge
 
-We've prepared several different user stories to work on. Depending on what position you applied to, pick one of them:  
+We've prepared several different user stories to work on. Depending on what position you applied to, pick one of them:
 - [Backend](./backend-readme.md)
 - [Frontend](./frontend-readme.md)
 - [Full Stack](./full-stack-readme.md)
@@ -113,12 +113,46 @@ Feel free to update or add more endpoints to accommodate or improve your solutio
 
 ## General questions
 
-- How much time did you spend working on the solution?
-- What’s the part of the solution you are most proud of?
+### How much time did you spend working on the solution?
 
-  _You can share a code snippet here if you feel like it_
+- 24/07: 16:00 - 19:00 (3h)
+- 25/07: 15:30 - 16:30, 19:00 - 24:00 (6h)
+- 26/07: 17:00 - 20:00 (3h), 22:00 - 23:00 (1h)
+- 37/07: 15:00 - 16:30 (1h)
 
-- If you had more time, what other things you would like to do?
-- Do you have any feedback regarding this coding challenge?  
+Total: 13h30
 
-  _Is the initial setup working?, is something missing?, or any other comment_
+### What’s the part of the solution you are most proud of?
+
+Nothing in particular, I feel everything is pretty standard and straightforward, except for the case insensitive, partial search on policy versions.
+
+The choice to serialize a `policy` and its related records as a `JSON` field does not allow for case insensitive searching using the prisma query engine alone; This was solved by executing a raw SQL query with prisma client. However, only the `$queryRawUnsafe` method returns the expected values, which forces us to manually escape the `search` user input using `Prisma.raw()`.
+
+[This issue is currently open, and without reply from the authors](https://github.com/prisma/prisma/issues/7390)
+
+That said, I was surprised at how easy it was to filter on deeply nested properties and collections in a `JSON` column using `jsonb_path_*` functions in Postgres:
+
+```js
+await prisma.$queryRawUnsafe(`
+  SELECT
+    "policyId",
+    jsonb_path_query(data::jsonb, '$.familyMembers[*] ? (@.firstName like_regex "${Prisma.raw(search)}" flag "i" || @.lastName like_regex "${Prisma.raw(search)}" flag "i" )')
+  FROM
+    "PolicyVersion"
+`)
+```
+
+### If you had more time, what other things you would like to do?
+
+- Setup turborepo + GitHub Actions for CI.
+- Dive deeper into Typescript / Prisma types to remove all `// @ts-ignore` usage
+
+### Do you have any feedback regarding this coding challenge?
+
+[backend] It's not clear what kind of updates are possible for a policy; besides adding and removing family members, what else can a customer edit?
+
+[backend] It's also not very clear _what_ a family member is. I ended up modeling them to have the same properties as a customer as it allowed fot respecting the acceptance criteria.
+
+I would also organize the monorepo differently.
+
+Do not keep `docker-compose`'s `.env` in the `./backend` folder; it seems to be there just to play nice with Prisma  - a `.env` can be added to `./backend/prisma` to solve this - but, conceptually, it should be at the same level as the `docker-compose.yml` file. This removes the need to navigate to a deeper folder to run commands, and also simplifies `docker-compose.yml`, as the `env_file` property can be ommited.
