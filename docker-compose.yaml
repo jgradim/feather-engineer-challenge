@@ -27,7 +27,9 @@ services:
     depends_on:
       - db
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    environment:
+      - BACKEND_PORT=${BACKEND_PORT}
 
   frontend:
     container_name: frontend

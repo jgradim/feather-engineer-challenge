@@ -1,54 +1,60 @@
-import express from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import express, { Request, Response } from 'express';
+import * as validate from 'express-validator';
+
+import {
+  policiesGet,
+  policiesHistory,
+  policiesUpdate,
+} from './policies';
 
 const app = express();
-const port = 4000;
-const prisma = new PrismaClient();
+const port = process.env.BACKEND_PORT || 4000;
+
+const handleValidationErrors = (req: Request, res: Response, next: Function) => {
+  const errors = validate.validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  next();
+};
 
 app.use(express.json())
 
-app.get('/policies', async (req, res) => {
-  const { search } = req.query;
+app.get(
+  '/policies',
+  validate.query('sortField').optional().isIn(['provider', 'insuranceType', 'status', 'startDate', 'endDate']),
+  handleValidationErrors,
+  policiesGet,
+);
 
-  const or: Prisma.PolicyWhereInput = search
-    ? {
-      OR: [
-        { provider: { contains: search as string, mode: 'insensitive' } },
-        { customer: { firstName: { contains: search as string, mode: 'insensitive' } } },
-        { customer: { lastName: { contains: search as string, mode: 'insensitive' } } }
-      ],
-    }
-    : {};
+app.get(
+  '/policies/:id/history',
+  validate.param('id').isUUID(4),
+  handleValidationErrors,
+  policiesHistory,
+);
 
-  const policies = await prisma.policy.findMany({
-    where: {
-      ...or,
-    },
-    select: {
-      id: true,
-      provider: true,
-      insuranceType: true,
-      status: true,
-      startDate: true,
-      endDate: true,
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          dateOfBirth: true
-        }
-      }
-    }
-  })
-
-  res.json(policies);
-})
+app.put(
+  '/policies/:id',
+  validate.param('id').isUUID(4),
+  validate.body('familyMembers.add').optional().isArray(),
+  validate.body('familyMembers.add.*.firstName').isLength({ min: 1 }),
+  validate.body('familyMembers.add.*.lastName').isLength({ min: 1 }),
+  validate.body('familyMembers.add.*.dateOfBirth').isDate().toDate(),
+  validate.body('familyMembers.remove').optional().isArray(),
+  validate.body('familyMembers.remove.*.id').isUUID(4).withMessage('wtf'),
+  handleValidationErrors,
+  policiesUpdate,
+);
 
 app.get('/', (req, res) => {
-  res.send('Server is up and running 🚀')
+  res.send('Server is up and running 🚀');
 })
 
-app.listen(port, () => {
+export const server = app.listen(port, () => {
   console.log(`🚀  Server ready at ${port}`);
 });
+
+export default app;
